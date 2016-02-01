@@ -43,7 +43,6 @@ func TestRemoteSource(t *testing.T) {
 		So(res.Raw.StatusCode, ShouldEqual, http.StatusOK)
 		err = createRemoteDummyStream(r, "foo")
 		So(err, ShouldBeNil)
-		// clean up after every run
 		Reset(func() {
 			dropRemoteDummyStream(r, "foo")
 			r.Do(client.Delete, "/topologies/test", nil)
@@ -56,37 +55,43 @@ func TestRemoteSource(t *testing.T) {
 			So(err, ShouldBeNil)
 
 			Convey("Then we should receive tuples from there", func() {
-				// this Writer stops the receiving source after 10 tuples
+				// a Writer to receive the tuples from the source
 				cnt := 0
 				w := core.WriterFunc(func(ctx *core.Context, t *core.Tuple) error {
 					cnt++
+					// this Writer stops the receiving source after 10 tuples
 					if cnt == 10 {
+						// call src.Stop() in a goroutine to avoid a deadlock
 						go src.Stop(ctx)
 						return nil
 					}
 					return nil
 				})
-				err := src.GenerateStream(ctx, w)
 
+				err := src.GenerateStream(ctx, w)
 				So(err, ShouldBeNil)
 				So(cnt, ShouldBeGreaterThanOrEqualTo, 10)
 			})
 
 			Convey("And when that stream goes away after some time", func() {
-				// this Writer stops the receiving source after 10 tuples
+				// a Writer to receive the tuples from the source
 				cnt := 0
 				w := core.WriterFunc(func(ctx *core.Context, t *core.Tuple) error {
 					cnt++
 					if cnt == 10 {
+						// this Writer drops the remote stream after 10 tuples
 						go dropRemoteDummyStream(r, "foo")
 						return nil
 					}
 					return nil
 				})
-				err := src.GenerateStream(ctx, w)
 
-				So(err, ShouldBeNil)
-				So(cnt, ShouldBeGreaterThanOrEqualTo, 10)
+				Convey("Then the source should stop itself", func() {
+					// GenerateStream exits if an "eos" message is received
+					err := src.GenerateStream(ctx, w)
+					So(err, ShouldBeNil)
+					So(cnt, ShouldBeGreaterThanOrEqualTo, 10)
+				})
 			})
 		})
 
@@ -100,28 +105,35 @@ func TestRemoteSource(t *testing.T) {
 					time.Sleep(100 * time.Millisecond)
 					go src.Stop(ctx)
 				}()
+
+				// a Writer to receive the tuples from the source
 				cnt := 0
 				w := core.WriterFunc(func(ctx *core.Context, t *core.Tuple) error {
 					cnt++
 					return nil
 				})
-				err := src.GenerateStream(ctx, w)
 
+				// GenerateStream should exit when the source is stopped,
+				// and we shouldn't have received any tuples
+				err := src.GenerateStream(ctx, w)
 				So(err, ShouldBeNil)
 				So(cnt, ShouldEqual, 0)
 			})
 
 			Convey("If it is created later then we should receive some tuples", func() {
+				// a Writer to receive the tuples from the source
 				cnt := 0
 				w := core.WriterFunc(func(ctx *core.Context, t *core.Tuple) error {
 					cnt++
 					if cnt == 10 {
+						// this Writer stops the receiving source after 10 tuples
 						go src.Stop(ctx)
 						return nil
 					}
 					return nil
 				})
 
+				// launch GenerateStream in the background
 				wg := sync.WaitGroup{}
 				go func() {
 					defer wg.Done()
@@ -129,10 +141,12 @@ func TestRemoteSource(t *testing.T) {
 					src.GenerateStream(ctx, w)
 				}()
 
-				// get no tuples within 100ms
+				// we should get no tuples initially since the remote stream
+				// does not exist
 				time.Sleep(100 * time.Millisecond)
 				So(cnt, ShouldEqual, 0)
 
+				// create the remote stream
 				err = createRemoteDummyStream(r, "foo2")
 				So(err, ShouldBeNil)
 
@@ -154,13 +168,17 @@ func TestRemoteSource(t *testing.T) {
 					time.Sleep(100 * time.Millisecond)
 					go src.Stop(ctx)
 				}()
+
+				// a Writer to receive the tuples from the source
 				cnt := 0
 				w := core.WriterFunc(func(ctx *core.Context, t *core.Tuple) error {
 					cnt++
 					return nil
 				})
-				err := src.GenerateStream(ctx, w)
 
+				// GenerateStream should exit when the source is stopped,
+				// and we shouldn't have received any tuples
+				err := src.GenerateStream(ctx, w)
 				So(err, ShouldBeNil)
 				So(cnt, ShouldEqual, 0)
 			})
