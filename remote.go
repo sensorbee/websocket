@@ -6,18 +6,18 @@ import (
 	"pfi/sensorbee/sensorbee/bql"
 	"pfi/sensorbee/sensorbee/core"
 	"pfi/sensorbee/sensorbee/data"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
 type remoteSensorBeeSource struct {
-	host     string
-	port     int
-	topology string
-	stream   string
-	stopped  int32
-	writeMut sync.Mutex
+	originURL string
+	topology  string
+	stream    string
+	stopped   int32
+	writeMut  sync.Mutex
 }
 
 func (r *remoteSensorBeeSource) GenerateStream(ctx *core.Context, w core.Writer) error {
@@ -31,10 +31,9 @@ func (r *remoteSensorBeeSource) GenerateStream(ctx *core.Context, w core.Writer)
 		firstRun = false
 
 		// connect to the given server
-		originURL := fmt.Sprintf("http://%s:%d", r.host, r.port)
-		wsURL := fmt.Sprintf("ws://%s:%d/api/v1/topologies/%s/wsqueries",
-			r.host, r.port, r.topology)
-		ws, err := websocket.Dial(wsURL, "", originURL)
+		wsURL := fmt.Sprintf("ws%s/api/v1/topologies/%s/wsqueries",
+			strings.TrimPrefix(r.originURL, "http"), r.topology)
+		ws, err := websocket.Dial(wsURL, "", r.originURL)
 		// TODO log properly
 		if err != nil {
 			fmt.Printf("error during connect: %s\n", err.Error())
@@ -165,6 +164,9 @@ func (r *remoteSensorBeeSource) GenerateStream(ctx *core.Context, w core.Writer)
 				}()
 			}
 		}
+		// if we arrive here, then the receiving process
+		// has been stopped
+		ws.Close()
 	}
 	return nil
 }
@@ -183,9 +185,16 @@ func (r *remoteSensorBeeSource) Stop(ctx *core.Context) error {
 
 func NewSource(ctx *core.Context, ioParams *bql.IOParams, params data.Map) (core.Source, error) {
 	return &remoteSensorBeeSource{
-		host:     "localhost",
-		port:     8090,
-		topology: "test",
-		stream:   "foo",
+		originURL: "http://localhost:8090",
+		topology:  "test",
+		stream:    "foo",
+	}, nil
+}
+
+func newTestSource(ctx *core.Context, url string) (core.Source, error) {
+	return &remoteSensorBeeSource{
+		originURL: url,
+		topology:  "test",
+		stream:    "foo",
 	}, nil
 }
