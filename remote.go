@@ -93,10 +93,10 @@ func (r *remoteSensorBeeSource) GenerateStream(ctx *core.Context, w core.Writer)
 
 			// check that this is an actual result
 			payloadRaw := d["payload"]
-			if rid, err := data.AsInt(d["rid"]); err != nil {
+			if rid, err := data.ToInt(d["rid"]); err != nil {
 				// TODO log errors properly
 				fmt.Printf("protocol violation: 'rid' was not an int: %s\n", d["rid"])
-				// continue // TODO currently rid is parsed as a float
+				continue
 			} else if rid != 1 {
 				// TODO log errors properly
 				fmt.Printf("received message with rid %d (not 1): %s\n", rid, payloadRaw)
