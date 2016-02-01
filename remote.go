@@ -6,6 +6,7 @@ import (
 	"pfi/sensorbee/sensorbee/bql"
 	"pfi/sensorbee/sensorbee/core"
 	"pfi/sensorbee/sensorbee/data"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -16,6 +17,7 @@ type remoteSensorBeeSource struct {
 	topology string
 	stream   string
 	stopped  int32
+	writeMut sync.Mutex
 }
 
 func (r *remoteSensorBeeSource) GenerateStream(ctx *core.Context, w core.Writer) error {
@@ -145,12 +147,22 @@ func (r *remoteSensorBeeSource) GenerateStream(ctx *core.Context, w core.Writer)
 					Timestamp:     ts,
 					ProcTimestamp: ts,
 				}
-				if err = w.Write(ctx, tup); err != nil {
-					// TODO log errors properly
-					fmt.Printf("error while writing tuple: %s\n", err.Error())
-				} else {
-					fmt.Printf("wrote %v\n", *tup)
-				}
+				func() {
+					// We wrap the `Write` call with the check for
+					// the stopped flag in a mutex, so that the flag
+					// is set *either* before *or* after the `Write`,
+					// not somewhere in between.
+					r.writeMut.Lock()
+					defer r.writeMut.Unlock()
+					if atomic.LoadInt32(&r.stopped) == 0 {
+						if err = w.Write(ctx, tup); err != nil {
+							// TODO log errors properly
+							fmt.Printf("error while writing tuple: %s\n", err.Error())
+						} else {
+							fmt.Printf("wrote %v\n", *tup)
+						}
+					}
+				}()
 			}
 		}
 	}
@@ -158,6 +170,13 @@ func (r *remoteSensorBeeSource) GenerateStream(ctx *core.Context, w core.Writer)
 }
 
 func (r *remoteSensorBeeSource) Stop(ctx *core.Context) error {
+	// We set the stop flag, but we must make sure that
+	// after this function has returned, no more calls to
+	// `Write` are made. Therefore both this "set stopped flag"
+	// block and the "write tuple if not stopped" block are
+	// wrapped in a mutex.
+	r.writeMut.Lock()
+	defer r.writeMut.Unlock()
 	atomic.StoreInt32(&r.stopped, 1)
 	return nil
 }

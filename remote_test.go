@@ -28,7 +28,7 @@ func TestRemoteSource(t *testing.T) {
 			w := core.WriterFunc(func(ctx *core.Context, t *core.Tuple) error {
 				cnt++
 				if cnt == 2 {
-					src.Stop(ctx)
+					go src.Stop(ctx)
 					return fmt.Errorf("limit reached")
 				}
 				return nil
