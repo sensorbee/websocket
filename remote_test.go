@@ -71,6 +71,23 @@ func TestRemoteSource(t *testing.T) {
 				So(err, ShouldBeNil)
 				So(cnt, ShouldBeGreaterThanOrEqualTo, 10)
 			})
+
+			Convey("And when that stream goes away after some time", func() {
+				// this Writer stops the receiving source after 10 tuples
+				cnt := 0
+				w := core.WriterFunc(func(ctx *core.Context, t *core.Tuple) error {
+					cnt++
+					if cnt == 10 {
+						go dropRemoteDummyStream(r, "foo")
+						return nil
+					}
+					return nil
+				})
+				err := src.GenerateStream(ctx, w)
+
+				So(err, ShouldBeNil)
+				So(cnt, ShouldBeGreaterThanOrEqualTo, 10)
+			})
 		})
 
 		Convey("When connecting to a non-existing remote stream", func() {

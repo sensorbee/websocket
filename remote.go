@@ -107,6 +107,11 @@ func (r *remoteSensorBeeSource) GenerateStream(ctx *core.Context, w core.Writer)
 				// TODO log errors properly
 				fmt.Printf("protocol violation: 'type' was not an int: %s\n", d["type"])
 				continue
+			} else if t == "eos" {
+				// TODO log this properly
+				fmt.Printf("received end-of-stream message\n")
+				atomic.StoreInt32(&r.stopped, 1)
+				break
 			} else if t != "result" {
 				// TODO log errors properly
 				fmt.Printf("received '%s' message (not 'result'): %s\n", t, payloadRaw)
