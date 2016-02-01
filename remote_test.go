@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"fmt"
 	. "github.com/smartystreets/goconvey/convey"
 	"net/http"
 	"pfi/sensorbee/sensorbee/bql"
@@ -8,6 +9,7 @@ import (
 	"pfi/sensorbee/sensorbee/core"
 	"pfi/sensorbee/sensorbee/data"
 	"pfi/sensorbee/sensorbee/server/testutil"
+	"sync"
 	"testing"
 	"time"
 )
@@ -39,22 +41,18 @@ func TestRemoteSource(t *testing.T) {
 		})
 		So(err, ShouldBeNil)
 		So(res.Raw.StatusCode, ShouldEqual, http.StatusOK)
-		res, err = r.Do(client.Post, "/topologies/test/queries", map[string]interface{}{
-			"queries": `CREATE SOURCE foo TYPE dummy;`,
-		})
+		err = createRemoteDummyStream(r, "foo")
 		So(err, ShouldBeNil)
-		So(res.Raw.StatusCode, ShouldEqual, http.StatusOK)
 		// clean up after every run
 		Reset(func() {
-			r.Do(client.Post, "/topologies/test/queries", map[string]interface{}{
-				"queries": `DROP SOURCE foo;`,
-			})
+			dropRemoteDummyStream(r, "foo")
 			r.Do(client.Delete, "/topologies/test", nil)
 		})
 
+		ctx := core.NewContext(nil)
+
 		Convey("When connecting to that remote stream", func() {
-			ctx := core.NewContext(nil)
-			src, err := newTestSource(ctx, srv.URL())
+			src, err := newTestSource(ctx, srv.URL(), "test", "foo")
 			So(err, ShouldBeNil)
 
 			Convey("Then we should receive tuples from there", func() {
@@ -74,7 +72,111 @@ func TestRemoteSource(t *testing.T) {
 				So(cnt, ShouldBeGreaterThanOrEqualTo, 10)
 			})
 		})
+
+		Convey("When connecting to a non-existing remote stream", func() {
+			src, err := newTestSource(ctx, srv.URL(), "test", "foo2")
+			So(err, ShouldBeNil)
+
+			Convey("Then we should receive no tuples from there", func() {
+				// stop the receiving source after some time
+				go func() {
+					time.Sleep(100 * time.Millisecond)
+					go src.Stop(ctx)
+				}()
+				cnt := 0
+				w := core.WriterFunc(func(ctx *core.Context, t *core.Tuple) error {
+					cnt++
+					return nil
+				})
+				err := src.GenerateStream(ctx, w)
+
+				So(err, ShouldBeNil)
+				So(cnt, ShouldEqual, 0)
+			})
+
+			Convey("If it is created later then we should receive some tuples", func() {
+				cnt := 0
+				w := core.WriterFunc(func(ctx *core.Context, t *core.Tuple) error {
+					cnt++
+					if cnt == 10 {
+						go src.Stop(ctx)
+						return nil
+					}
+					return nil
+				})
+
+				wg := sync.WaitGroup{}
+				go func() {
+					defer wg.Done()
+					wg.Add(1)
+					src.GenerateStream(ctx, w)
+				}()
+
+				// get no tuples within 100ms
+				time.Sleep(100 * time.Millisecond)
+				So(cnt, ShouldEqual, 0)
+
+				err = createRemoteDummyStream(r, "foo2")
+				So(err, ShouldBeNil)
+
+				// wait until GenerateStream exits
+				wg.Wait()
+				So(cnt, ShouldBeGreaterThanOrEqualTo, 10)
+
+				dropRemoteDummyStream(r, "foo2")
+			})
+		})
+
+		Convey("When connecting to a non-existing remote topology", func() {
+			src, err := newTestSource(ctx, srv.URL(), "test2", "foo")
+			So(err, ShouldBeNil)
+
+			Convey("Then we should receive no tuples from there", func() {
+				// stop the receiving source after some time
+				go func() {
+					time.Sleep(100 * time.Millisecond)
+					go src.Stop(ctx)
+				}()
+				cnt := 0
+				w := core.WriterFunc(func(ctx *core.Context, t *core.Tuple) error {
+					cnt++
+					return nil
+				})
+				err := src.GenerateStream(ctx, w)
+
+				So(err, ShouldBeNil)
+				So(cnt, ShouldEqual, 0)
+			})
+		})
 	})
+}
+
+func createRemoteDummyStream(r *client.Requester, streamName string) error {
+	res, err := r.Do(client.Post, "/topologies/test/queries", map[string]interface{}{
+		"queries": fmt.Sprintf(`CREATE SOURCE %s TYPE dummy;`, streamName),
+	})
+	if err != nil {
+		return err
+	}
+	if res.Raw.StatusCode != http.StatusOK {
+		return fmt.Errorf("status code is %d, not %d",
+			res.Raw.StatusCode, http.StatusOK)
+	}
+	return nil
+}
+
+func dropRemoteDummyStream(r *client.Requester, streamName string) error {
+	res, err := r.Do(client.Post, "/topologies/test/queries", map[string]interface{}{
+		"queries": fmt.Sprintf(`DROP SOURCE %s;`, streamName),
+	})
+	if err != nil {
+		return err
+	}
+	if res.Raw.StatusCode != http.StatusOK {
+		return fmt.Errorf("status code is %d, not %d",
+			res.Raw.StatusCode, http.StatusOK)
+	}
+	return nil
 }
 
 type dummySource struct {
@@ -93,7 +195,7 @@ func (d *dummySource) GenerateStream(ctx *core.Context, w core.Writer) error {
 		}); err != nil {
 			return err
 		}
-		time.Sleep(time.Duration(10) * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 	return nil
 }

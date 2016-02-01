@@ -191,10 +191,10 @@ func NewSource(ctx *core.Context, ioParams *bql.IOParams, params data.Map) (core
 	}, nil
 }
 
-func newTestSource(ctx *core.Context, url string) (core.Source, error) {
+func newTestSource(ctx *core.Context, url string, topology string, stream string) (core.Source, error) {
 	return &remoteSensorBeeSource{
 		originURL: url,
-		topology:  "test",
-		stream:    "foo",
+		topology:  topology,
+		stream:    stream,
 	}, nil
 }
