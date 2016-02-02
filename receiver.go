@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-type remoteSensorBeeSource struct {
+type wsReceiverSource struct {
 	originURL string
 	topology  string
 	stream    string
@@ -20,7 +20,7 @@ type remoteSensorBeeSource struct {
 	writeMut  sync.Mutex
 }
 
-func (r *remoteSensorBeeSource) GenerateStream(ctx *core.Context, w core.Writer) error {
+func (r *wsReceiverSource) GenerateStream(ctx *core.Context, w core.Writer) error {
 	firstRun := true
 	// unless the UDSF is stopped, try to reconnect
 	for atomic.LoadInt32(&r.stopped) == 0 {
@@ -173,7 +173,7 @@ func (r *remoteSensorBeeSource) GenerateStream(ctx *core.Context, w core.Writer)
 	return nil
 }
 
-func (r *remoteSensorBeeSource) Stop(ctx *core.Context) error {
+func (r *wsReceiverSource) Stop(ctx *core.Context) error {
 	// We set the stop flag, but we must make sure that
 	// after this function has returned, no more calls to
 	// `Write` are made. Therefore both this "set stopped flag"
@@ -218,7 +218,7 @@ func NewSource(ctx *core.Context, ioParams *bql.IOParams, params data.Map) (core
 		}
 	}
 
-	return &remoteSensorBeeSource{
+	return &wsReceiverSource{
 		originURL: fmt.Sprintf("http://%s:%d", host, port),
 		topology:  topology,
 		stream:    stream,
@@ -226,7 +226,7 @@ func NewSource(ctx *core.Context, ioParams *bql.IOParams, params data.Map) (core
 }
 
 func newTestSource(ctx *core.Context, url string, topology string, stream string) (core.Source, error) {
-	return &remoteSensorBeeSource{
+	return &wsReceiverSource{
 		originURL: url,
 		topology:  topology,
 		stream:    stream,
