@@ -18,6 +18,116 @@ func init() {
 	bql.MustRegisterGlobalSourceCreator("dummy", bql.SourceCreatorFunc(createDummySource))
 }
 
+func TestRemoteSourceParameters(t *testing.T) {
+	ctx := core.NewContext(nil)
+	ioParams := &bql.IOParams{}
+
+	Convey("Given a source constructor", t, func() {
+		Convey("When no parameters are given", func() {
+			Convey("Then construction fails", func() {
+				params := data.Map{}
+				_, err := NewSource(ctx, ioParams, params)
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, "no topology given")
+			})
+		})
+
+		Convey("When topology is given", func() {
+			params := data.Map{}
+			Convey("When the type is wrong", func() {
+				params["topology"] = data.Int(7)
+				Convey("Then construction fails", func() {
+					_, err := NewSource(ctx, ioParams, params)
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldEqual, "topology parameter must be a string")
+				})
+			})
+
+			Convey("When the type is correct but nothing else is given", func() {
+				params["topology"] = data.String("foo")
+				Convey("Then construction fails", func() {
+					_, err := NewSource(ctx, ioParams, params)
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldEqual, "no stream given")
+				})
+			})
+
+			Convey("And stream is given", func() {
+				params["topology"] = data.String("foo")
+				Convey("When the type is wrong", func() {
+					params["stream"] = data.Int(7)
+					Convey("Then construction fails", func() {
+						_, err := NewSource(ctx, ioParams, params)
+						So(err, ShouldNotBeNil)
+						So(err.Error(), ShouldEqual, "stream parameter must be a string")
+					})
+				})
+
+				Convey("When the type is correct", func() {
+					params["stream"] = data.String("bar")
+					Convey("Then construction succeeds", func() {
+						src, err := NewSource(ctx, ioParams, params)
+						So(err, ShouldBeNil)
+						So(src, ShouldHaveSameTypeAs, &remoteSensorBeeSource{})
+						s := src.(*remoteSensorBeeSource)
+						So(s.topology, ShouldEqual, "foo")
+						So(s.stream, ShouldEqual, "bar")
+						So(s.originURL, ShouldEqual, "http://localhost:8090")
+					})
+
+					Convey("And when host is given", func() {
+						Convey("When the type is wrong", func() {
+							params["host"] = data.Int(7)
+							Convey("Then construction fails", func() {
+								_, err := NewSource(ctx, ioParams, params)
+								So(err, ShouldNotBeNil)
+								So(err.Error(), ShouldEqual, "host parameter must be a string")
+							})
+						})
+
+						Convey("When the type is correct", func() {
+							params["host"] = data.String("example.com")
+							Convey("Then host information is set", func() {
+								src, err := NewSource(ctx, ioParams, params)
+								So(err, ShouldBeNil)
+								So(src, ShouldHaveSameTypeAs, &remoteSensorBeeSource{})
+								s := src.(*remoteSensorBeeSource)
+								So(s.topology, ShouldEqual, "foo")
+								So(s.stream, ShouldEqual, "bar")
+								So(s.originURL, ShouldEqual, "http://example.com:8090")
+							})
+						})
+					})
+
+					Convey("And when port is given", func() {
+						Convey("When the type is wrong", func() {
+							params["port"] = data.String("moge")
+							Convey("Then construction fails", func() {
+								_, err := NewSource(ctx, ioParams, params)
+								So(err, ShouldNotBeNil)
+								So(err.Error(), ShouldEqual, "port parameter must be an integer")
+							})
+						})
+
+						Convey("When the type is correct", func() {
+							params["port"] = data.Int(1234)
+							Convey("Then port information is set", func() {
+								src, err := NewSource(ctx, ioParams, params)
+								So(err, ShouldBeNil)
+								So(src, ShouldHaveSameTypeAs, &remoteSensorBeeSource{})
+								s := src.(*remoteSensorBeeSource)
+								So(s.topology, ShouldEqual, "foo")
+								So(s.stream, ShouldEqual, "bar")
+								So(s.originURL, ShouldEqual, "http://localhost:1234")
+							})
+						})
+					})
+				})
+			})
+		})
+	})
+}
+
 func TestRemoteSource(t *testing.T) {
 	// start a test server
 	currentRealHTTPValue := testutil.TestAPIWithRealHTTPServer

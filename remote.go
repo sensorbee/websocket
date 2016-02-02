@@ -186,10 +186,42 @@ func (r *remoteSensorBeeSource) Stop(ctx *core.Context) error {
 }
 
 func NewSource(ctx *core.Context, ioParams *bql.IOParams, params data.Map) (core.Source, error) {
+	if params["topology"] == nil {
+		return nil, fmt.Errorf("no topology given")
+	}
+	topology, err := data.AsString(params["topology"])
+	if err != nil {
+		return nil, fmt.Errorf("topology parameter must be a string")
+	}
+
+	if params["stream"] == nil {
+		return nil, fmt.Errorf("no stream given")
+	}
+	stream, err := data.AsString(params["stream"])
+	if err != nil {
+		return nil, fmt.Errorf("stream parameter must be a string")
+	}
+
+	host := "localhost"
+	if params["host"] != nil {
+		host, err = data.AsString(params["host"])
+		if err != nil {
+			return nil, fmt.Errorf("host parameter must be a string")
+		}
+	}
+
+	port := int64(8090)
+	if params["port"] != nil {
+		port, err = data.AsInt(params["port"])
+		if err != nil {
+			return nil, fmt.Errorf("port parameter must be an integer")
+		}
+	}
+
 	return &remoteSensorBeeSource{
-		originURL: "http://localhost:8090",
-		topology:  "test",
-		stream:    "foo",
+		originURL: fmt.Sprintf("http://%s:%d", host, port),
+		topology:  topology,
+		stream:    stream,
 	}, nil
 }
 
