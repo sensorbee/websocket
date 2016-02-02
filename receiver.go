@@ -89,6 +89,9 @@ func (r *wsReceiverSource) GenerateStream(ctx *core.Context, w core.Writer) erro
 			d := data.Map{}
 			if err := websocket.JSON.Receive(ws, &d); err != nil {
 				ctx.ErrLog(err).Error("failed to receive/parse stream item")
+				if err.Error() == "EOF" {
+					break
+				}
 				continue
 			}
 
