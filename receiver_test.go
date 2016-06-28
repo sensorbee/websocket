@@ -68,8 +68,8 @@ func TestRemoteSourceParameters(t *testing.T) {
 					Convey("Then construction succeeds", func() {
 						src, err := NewSource(ctx, ioParams, params)
 						So(err, ShouldBeNil)
-						So(src, ShouldHaveSameTypeAs, &remoteSensorBeeSource{})
-						s := src.(*remoteSensorBeeSource)
+						So(src, ShouldHaveSameTypeAs, &wsReceiverSource{})
+						s := src.(*wsReceiverSource)
 						So(s.topology, ShouldEqual, "foo")
 						So(s.stream, ShouldEqual, "bar")
 						So(s.originURL, ShouldEqual, "http://localhost:8090")
@@ -90,8 +90,8 @@ func TestRemoteSourceParameters(t *testing.T) {
 							Convey("Then host information is set", func() {
 								src, err := NewSource(ctx, ioParams, params)
 								So(err, ShouldBeNil)
-								So(src, ShouldHaveSameTypeAs, &remoteSensorBeeSource{})
-								s := src.(*remoteSensorBeeSource)
+								So(src, ShouldHaveSameTypeAs, &wsReceiverSource{})
+								s := src.(*wsReceiverSource)
 								So(s.topology, ShouldEqual, "foo")
 								So(s.stream, ShouldEqual, "bar")
 								So(s.originURL, ShouldEqual, "http://example.com:8090")
@@ -114,8 +114,8 @@ func TestRemoteSourceParameters(t *testing.T) {
 							Convey("Then port information is set", func() {
 								src, err := NewSource(ctx, ioParams, params)
 								So(err, ShouldBeNil)
-								So(src, ShouldHaveSameTypeAs, &remoteSensorBeeSource{})
-								s := src.(*remoteSensorBeeSource)
+								So(src, ShouldHaveSameTypeAs, &wsReceiverSource{})
+								s := src.(*wsReceiverSource)
 								So(s.topology, ShouldEqual, "foo")
 								So(s.stream, ShouldEqual, "bar")
 								So(s.originURL, ShouldEqual, "http://localhost:1234")
