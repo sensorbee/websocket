@@ -63,16 +63,20 @@ func TestRemoteSourceParameters(t *testing.T) {
 					})
 				})
 
+				get := func(m data.Map, p string) data.Value {
+					v, err := m.Get(data.MustCompilePath(p))
+					So(err, ShouldBeNil)
+					return v
+				}
 				Convey("When the type is correct", func() {
 					params["stream"] = data.String("bar")
 					Convey("Then construction succeeds", func() {
 						src, err := NewSource(ctx, ioParams, params)
 						So(err, ShouldBeNil)
-						So(src, ShouldHaveSameTypeAs, &wsReceiverSource{})
-						s := src.(*wsReceiverSource)
-						So(s.topology, ShouldEqual, "foo")
-						So(s.stream, ShouldEqual, "bar")
-						So(s.originURL, ShouldEqual, "http://localhost:15601")
+						s := src.(core.Statuser).Status()
+						So(get(s, "internal_source.topology"), ShouldEqual, "foo")
+						So(get(s, "internal_source.stream"), ShouldEqual, "bar")
+						So(get(s, "internal_source.url"), ShouldEqual, "http://localhost:15601")
 					})
 
 					Convey("And when host is given", func() {
@@ -90,11 +94,10 @@ func TestRemoteSourceParameters(t *testing.T) {
 							Convey("Then host information is set", func() {
 								src, err := NewSource(ctx, ioParams, params)
 								So(err, ShouldBeNil)
-								So(src, ShouldHaveSameTypeAs, &wsReceiverSource{})
-								s := src.(*wsReceiverSource)
-								So(s.topology, ShouldEqual, "foo")
-								So(s.stream, ShouldEqual, "bar")
-								So(s.originURL, ShouldEqual, "http://example.com:15601")
+								s := src.(core.Statuser).Status()
+								So(get(s, "internal_source.topology"), ShouldEqual, "foo")
+								So(get(s, "internal_source.stream"), ShouldEqual, "bar")
+								So(get(s, "internal_source.url"), ShouldEqual, "http://example.com:15601")
 							})
 						})
 					})
@@ -114,11 +117,10 @@ func TestRemoteSourceParameters(t *testing.T) {
 							Convey("Then port information is set", func() {
 								src, err := NewSource(ctx, ioParams, params)
 								So(err, ShouldBeNil)
-								So(src, ShouldHaveSameTypeAs, &wsReceiverSource{})
-								s := src.(*wsReceiverSource)
-								So(s.topology, ShouldEqual, "foo")
-								So(s.stream, ShouldEqual, "bar")
-								So(s.originURL, ShouldEqual, "http://localhost:1234")
+								s := src.(core.Statuser).Status()
+								So(get(s, "internal_source.topology"), ShouldEqual, "foo")
+								So(get(s, "internal_source.stream"), ShouldEqual, "bar")
+								So(get(s, "internal_source.url"), ShouldEqual, "http://localhost:1234")
 							})
 						})
 					})
@@ -294,6 +296,15 @@ func TestRemoteSource(t *testing.T) {
 			})
 		})
 	})
+}
+
+func newTestSource(ctx *core.Context, url string, topology string, stream string) (core.Source, error) {
+	return core.ImplementSourceStop(&wsReceiverSource{
+		originURL: url,
+		topology:  topology,
+		stream:    stream,
+		stopped:   make(chan struct{}, 1),
+	}), nil
 }
 
 func createRemoteDummyStream(r *client.Requester, streamName string) error {
