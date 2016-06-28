@@ -72,7 +72,7 @@ func TestRemoteSourceParameters(t *testing.T) {
 						s := src.(*wsReceiverSource)
 						So(s.topology, ShouldEqual, "foo")
 						So(s.stream, ShouldEqual, "bar")
-						So(s.originURL, ShouldEqual, "http://localhost:8090")
+						So(s.originURL, ShouldEqual, "http://localhost:15601")
 					})
 
 					Convey("And when host is given", func() {
@@ -94,7 +94,7 @@ func TestRemoteSourceParameters(t *testing.T) {
 								s := src.(*wsReceiverSource)
 								So(s.topology, ShouldEqual, "foo")
 								So(s.stream, ShouldEqual, "bar")
-								So(s.originURL, ShouldEqual, "http://example.com:8090")
+								So(s.originURL, ShouldEqual, "http://example.com:15601")
 							})
 						})
 					})
