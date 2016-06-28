@@ -3,9 +3,9 @@ package websocket
 import (
 	"fmt"
 	"golang.org/x/net/websocket"
-	"pfi/sensorbee/sensorbee/bql"
-	"pfi/sensorbee/sensorbee/core"
-	"pfi/sensorbee/sensorbee/data"
+	"gopkg.in/sensorbee/sensorbee.v0/bql"
+	"gopkg.in/sensorbee/sensorbee.v0/core"
+	"gopkg.in/sensorbee/sensorbee.v0/data"
 	"strings"
 	"sync"
 	"sync/atomic"
