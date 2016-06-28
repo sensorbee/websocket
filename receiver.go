@@ -11,10 +11,13 @@ import (
 )
 
 type wsReceiverSource struct {
-	originURL string
-	topology  string
-	stream    string
-	stopped   chan struct{}
+	originURL      string
+	topology       string
+	stream         string
+	bufferSize     int
+	dropMode       string
+	dropModeClause string
+	stopped        chan struct{}
 }
 
 func (r *wsReceiverSource) GenerateStream(ctx *core.Context, w core.Writer) error {
@@ -52,8 +55,8 @@ func (r *wsReceiverSource) connectAndReceive(ctx *core.Context, w core.Writer) (
 		Info("connected to remote host")
 
 	// send a command
-	stmt := fmt.Sprintf("SELECT RSTREAM ts(), * AS data FROM %s [RANGE 1 TUPLES];",
-		r.stream)
+	stmt := fmt.Sprintf("SELECT RSTREAM ts(), * AS data FROM %s [RANGE 1 TUPLES, BUFFER SIZE %v, %v IF FULL];",
+		r.stream, r.bufferSize, r.dropModeClause)
 	msg := data.Map{
 		"rid": data.Int(1),
 		"payload": data.Map{
@@ -184,9 +187,11 @@ func (r *wsReceiverSource) Stop(ctx *core.Context) error {
 
 func (r *wsReceiverSource) Status() data.Map {
 	return data.Map{
-		"url":      data.String(r.originURL),
-		"topology": data.String(r.topology),
-		"stream":   data.String(r.stream),
+		"url":         data.String(r.originURL),
+		"topology":    data.String(r.topology),
+		"stream":      data.String(r.stream),
+		"buffer_size": data.Int(r.bufferSize),
+		"drop_mode":   data.String(r.dropMode),
 	}
 }
 
@@ -196,7 +201,7 @@ func NewSource(ctx *core.Context, ioParams *bql.IOParams, params data.Map) (core
 	}
 	topology, err := data.AsString(params["topology"])
 	if err != nil {
-		return nil, fmt.Errorf("topology parameter must be a string")
+		return nil, fmt.Errorf("topology parameter must be a string: %v", err)
 	}
 
 	if params["stream"] == nil {
@@ -204,14 +209,14 @@ func NewSource(ctx *core.Context, ioParams *bql.IOParams, params data.Map) (core
 	}
 	stream, err := data.AsString(params["stream"])
 	if err != nil {
-		return nil, fmt.Errorf("stream parameter must be a string")
+		return nil, fmt.Errorf("stream parameter must be a string: %v", err)
 	}
 
 	host := "localhost"
 	if params["host"] != nil {
 		host, err = data.AsString(params["host"])
 		if err != nil {
-			return nil, fmt.Errorf("host parameter must be a string")
+			return nil, fmt.Errorf("host parameter must be a string: %v", err)
 		}
 	}
 
@@ -219,14 +224,50 @@ func NewSource(ctx *core.Context, ioParams *bql.IOParams, params data.Map) (core
 	if params["port"] != nil {
 		port, err = data.AsInt(params["port"])
 		if err != nil {
-			return nil, fmt.Errorf("port parameter must be an integer")
+			return nil, fmt.Errorf("port parameter must be an integer: %v", err)
 		}
 	}
 
+	bufferSize := 1024
+	if v, ok := params["buffer_size"]; ok {
+		s, err := data.AsInt(v)
+		if err != nil {
+			return nil, fmt.Errorf("buffer_size parameter must be an integer: %v", err)
+		}
+		c := core.BoxInputConfig{}
+		c.Capacity = int(s)
+		if err := c.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid buffer_size: %v", err)
+		}
+		bufferSize = int(s)
+	}
+
+	drop := "wait"
+	dropClause := "WAIT"
+	if v, ok := params["drop_mode"]; ok {
+		drop, err = data.AsString(v)
+		if err != nil {
+			return nil, fmt.Errorf("drop_mode parameter must be a string: %v", err)
+		}
+
+		switch drop {
+		case "wait":
+			dropClause = "WAIT"
+		case "newest":
+			dropClause = "DROP NEWEST"
+		case "oldest":
+			dropClause = "DROP OLDEST"
+		default:
+			return nil, fmt.Errorf("invalid drop_mode value: %v", drop)
+		}
+	}
 	return core.ImplementSourceStop(&wsReceiverSource{
-		originURL: fmt.Sprintf("http://%s:%d", host, port),
-		topology:  topology,
-		stream:    stream,
-		stopped:   make(chan struct{}, 1),
+		originURL:      fmt.Sprintf("http://%s:%d", host, port),
+		topology:       topology,
+		stream:         stream,
+		bufferSize:     bufferSize,
+		dropMode:       drop,
+		dropModeClause: dropClause,
+		stopped:        make(chan struct{}, 1),
 	}), nil
 }
