@@ -32,7 +32,7 @@ func (r *wsReceiverSource) GenerateStream(ctx *core.Context, w core.Writer) erro
 		}
 		waitInterval = time.Duration(2) * time.Second // TODO: exponential backoff
 
-		if err, retryable := r.connectAndReceive(ctx, w); err == nil {
+		if retryable, err := r.connectAndReceive(ctx, w); err == nil {
 			// no error means that the source has received "eos"
 			return nil
 		} else if !retryable {
@@ -41,14 +41,14 @@ func (r *wsReceiverSource) GenerateStream(ctx *core.Context, w core.Writer) erro
 	}
 }
 
-func (r *wsReceiverSource) connectAndReceive(ctx *core.Context, w core.Writer) (error, bool) {
+func (r *wsReceiverSource) connectAndReceive(ctx *core.Context, w core.Writer) (bool, error) {
 	// connect to the given server
 	wsURL := fmt.Sprintf("ws%s/api/v1/topologies/%s/wsqueries",
 		strings.TrimPrefix(r.originURL, "http"), r.topology)
 	ws, err := websocket.Dial(wsURL, "", r.originURL)
 	if err != nil {
 		ctx.ErrLog(err).Error("unable to connect to remote host")
-		return err, true
+		return true, err
 	}
 	defer ws.Close()
 	ctx.Log().WithField("url", r.originURL).
@@ -65,39 +65,39 @@ func (r *wsReceiverSource) connectAndReceive(ctx *core.Context, w core.Writer) (
 	}
 	if err := websocket.JSON.Send(ws, msg); err != nil {
 		ctx.ErrLog(err).Error("failed to send query to remote host")
-		return err, true
+		return true, err
 	}
 
 	// receive the "start of stream" response
 	first := data.Map{}
 	if err := websocket.JSON.Receive(ws, &first); err != nil {
 		ctx.ErrLog(err).Error("failed to receive/process sos message")
-		return err, true
+		return true, err
 	}
 
 	t, err := data.AsString(first["type"])
 	if err != nil {
 		ctx.ErrLog(err).WithField("type", first["type"]).
 			Error("'type' value is not a string")
-		return err, true
+		return true, err
 	}
 	if t == "error" {
 		err := fmt.Errorf("%s", first["payload"])
 		ctx.ErrLog(err).Error("server returned error, not start-of-stream")
-		return err, true
+		return true, err
 	} else if t != "sos" {
 		typeErr := fmt.Errorf(`"type" was expected to be "sos", not "%s"`, t)
 		ctx.ErrLog(typeErr).Error("wrong message type")
-		return typeErr, true
+		return true, typeErr
 	}
 	return r.receive(ctx, ws, w)
 }
 
-func (r *wsReceiverSource) receive(ctx *core.Context, ws *websocket.Conn, w core.Writer) (error, bool) {
+func (r *wsReceiverSource) receive(ctx *core.Context, ws *websocket.Conn, w core.Writer) (bool, error) {
 	for {
 		select {
 		case <-r.stopped:
-			return core.ErrSourceStopped, false
+			return false, core.ErrSourceStopped
 		default:
 		}
 
@@ -108,7 +108,7 @@ func (r *wsReceiverSource) receive(ctx *core.Context, ws *websocket.Conn, w core
 			// TODO: change this check to a better way. It doesn't look stable.
 			// Moreover, it doesn't stop when a critical error other than EOF is returned.
 			if err.Error() == "EOF" {
-				return err, true
+				return true, err
 			}
 			continue
 		}
@@ -130,7 +130,7 @@ func (r *wsReceiverSource) receive(ctx *core.Context, ws *websocket.Conn, w core
 			continue
 		} else if t == "eos" {
 			ctx.Log().Info("received end-of-stream message")
-			return nil, false
+			return false, nil
 		} else if t != "result" {
 			ctx.ErrLog(fmt.Errorf("expected \"result\"-type message")).WithField("type", t).
 				Error("received badly typed message")
@@ -151,13 +151,13 @@ func (r *wsReceiverSource) receive(ctx *core.Context, ws *websocket.Conn, w core
 				continue
 			}
 			// extract timestamp (we will reuse this later)
-			ts_str, err := data.AsString(payload["ts"])
+			tsStr, err := data.AsString(payload["ts"])
 			if err != nil {
 				ctx.ErrLog(err).WithField("ts", payload["ts"]).
 					Error("malformed data: 'payload.ts' was not a string")
 				continue
 			}
-			ts, err := data.ToTimestamp(data.String(ts_str))
+			ts, err := data.ToTimestamp(data.String(tsStr))
 			if err != nil {
 				ctx.ErrLog(err).WithField("ts", payload["ts"]).
 					Error("malformed data: 'payload.ts' was not a timestamp")
@@ -171,7 +171,7 @@ func (r *wsReceiverSource) receive(ctx *core.Context, ws *websocket.Conn, w core
 			tup.Timestamp = ts
 			tup.ProcTimestamp = ts
 			if err = w.Write(ctx, tup); err != nil {
-				return err, err != core.ErrSourceStopped
+				return err != core.ErrSourceStopped, err
 			}
 		}
 	}
@@ -195,6 +195,18 @@ func (r *wsReceiverSource) Status() data.Map {
 	}
 }
 
+// NewSource creates a new WebSocket source to connect to a remote SensorBee
+// instance. The source has following required parameters:
+//
+//	* topology: the name of the topology in the remote instance
+//	* stream: the name of the stream to issue a query
+//
+// It also has optional parameters:
+//
+//	* host: the name of the host (default: "localhost")
+//	* port: the port number of the remote instance (default: 15601)
+//	* buffer_size: the buffer size in the BUFFER SIZE clause (default: 1024)
+//	* drop_mode: the behavior of the IF FULL clause: "wait", "newest", or "oldest" (default: "wait")
 func NewSource(ctx *core.Context, ioParams *bql.IOParams, params data.Map) (core.Source, error) {
 	if params["topology"] == nil {
 		return nil, fmt.Errorf("no topology given")
