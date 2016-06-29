@@ -286,7 +286,7 @@ func TestRemoteSource(t *testing.T) {
 			Convey("Then we should receive no tuples from there", func() {
 				// stop the receiving source after some time
 				go func() {
-					time.Sleep(100 * time.Millisecond)
+					time.Sleep(10 * time.Millisecond)
 					go src.Stop(ctx)
 				}()
 
@@ -319,15 +319,16 @@ func TestRemoteSource(t *testing.T) {
 
 				// launch GenerateStream in the background
 				wg := sync.WaitGroup{}
+				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					wg.Add(1)
 					src.GenerateStream(ctx, w)
 				}()
 
 				// we should get no tuples initially since the remote stream
-				// does not exist
-				time.Sleep(100 * time.Millisecond)
+				// does not exist. Although this check doesn't always run after
+				// GenerateStream is called, it should sometimes fails if the
+				// code has some problem.
 				So(cnt, ShouldEqual, 0)
 
 				// create the remote stream
@@ -349,7 +350,7 @@ func TestRemoteSource(t *testing.T) {
 			Convey("Then we should receive no tuples from there", func() {
 				// stop the receiving source after some time
 				go func() {
-					time.Sleep(100 * time.Millisecond)
+					time.Sleep(10 * time.Millisecond)
 					go src.Stop(ctx)
 				}()
 
@@ -411,11 +412,10 @@ func dropRemoteDummyStream(r *client.Requester, streamName string) error {
 }
 
 type dummySource struct {
-	stopped bool
 }
 
 func (d *dummySource) GenerateStream(ctx *core.Context, w core.Writer) error {
-	for i := 0; !d.stopped && i < 99999999999999; i++ {
+	for i := 0; ; i++ {
 		now := time.Now()
 		if err := w.Write(ctx, &core.Tuple{
 			Data: data.Map{
@@ -426,16 +426,15 @@ func (d *dummySource) GenerateStream(ctx *core.Context, w core.Writer) error {
 		}); err != nil {
 			return err
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(1 * time.Millisecond) // This sleep makes the test faster
 	}
 	return nil
 }
 
 func (d *dummySource) Stop(ctx *core.Context) error {
-	d.stopped = true
 	return nil
 }
 
 func createDummySource(ctx *core.Context, ioParams *bql.IOParams, params data.Map) (core.Source, error) {
-	return &dummySource{}, nil
+	return core.ImplementSourceStop(&dummySource{}), nil
 }
