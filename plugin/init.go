@@ -2,7 +2,7 @@ package plugin
 
 import (
 	"gopkg.in/sensorbee/sensorbee.v0/bql"
-	"pfi/sensorbee/websocket"
+	"gopkg.in/sensorbee/websocket.v1"
 )
 
 func init() {
