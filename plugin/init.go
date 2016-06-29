@@ -1,7 +1,7 @@
 package plugin
 
 import (
-	"pfi/sensorbee/sensorbee/bql"
+	"gopkg.in/sensorbee/sensorbee.v0/bql"
 	"pfi/sensorbee/websocket"
 )
 

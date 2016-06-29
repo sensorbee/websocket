@@ -3,12 +3,12 @@ package websocket
 import (
 	"fmt"
 	. "github.com/smartystreets/goconvey/convey"
+	"gopkg.in/sensorbee/sensorbee.v0/bql"
+	"gopkg.in/sensorbee/sensorbee.v0/client"
+	"gopkg.in/sensorbee/sensorbee.v0/core"
+	"gopkg.in/sensorbee/sensorbee.v0/data"
+	"gopkg.in/sensorbee/sensorbee.v0/server/testutil"
 	"net/http"
-	"pfi/sensorbee/sensorbee/bql"
-	"pfi/sensorbee/sensorbee/client"
-	"pfi/sensorbee/sensorbee/core"
-	"pfi/sensorbee/sensorbee/data"
-	"pfi/sensorbee/sensorbee/server/testutil"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +23,12 @@ func TestRemoteSourceParameters(t *testing.T) {
 	ioParams := &bql.IOParams{}
 
 	Convey("Given a source constructor", t, func() {
+		get := func(m data.Map, p string) data.Value {
+			v, err := m.Get(data.MustCompilePath(p))
+			So(err, ShouldBeNil)
+			return v
+		}
+
 		Convey("When no parameters are given", func() {
 			Convey("Then construction fails", func() {
 				params := data.Map{}
@@ -39,7 +45,7 @@ func TestRemoteSourceParameters(t *testing.T) {
 				Convey("Then construction fails", func() {
 					_, err := NewSource(ctx, ioParams, params)
 					So(err, ShouldNotBeNil)
-					So(err.Error(), ShouldEqual, "topology parameter must be a string")
+					So(err.Error(), ShouldStartWith, "topology parameter must be a string")
 				})
 			})
 
@@ -59,7 +65,7 @@ func TestRemoteSourceParameters(t *testing.T) {
 					Convey("Then construction fails", func() {
 						_, err := NewSource(ctx, ioParams, params)
 						So(err, ShouldNotBeNil)
-						So(err.Error(), ShouldEqual, "stream parameter must be a string")
+						So(err.Error(), ShouldStartWith, "stream parameter must be a string")
 					})
 				})
 
@@ -68,11 +74,10 @@ func TestRemoteSourceParameters(t *testing.T) {
 					Convey("Then construction succeeds", func() {
 						src, err := NewSource(ctx, ioParams, params)
 						So(err, ShouldBeNil)
-						So(src, ShouldHaveSameTypeAs, &remoteSensorBeeSource{})
-						s := src.(*remoteSensorBeeSource)
-						So(s.topology, ShouldEqual, "foo")
-						So(s.stream, ShouldEqual, "bar")
-						So(s.originURL, ShouldEqual, "http://localhost:8090")
+						s := src.(core.Statuser).Status()
+						So(get(s, "internal_source.topology"), ShouldEqual, "foo")
+						So(get(s, "internal_source.stream"), ShouldEqual, "bar")
+						So(get(s, "internal_source.url"), ShouldEqual, "http://localhost:15601")
 					})
 
 					Convey("And when host is given", func() {
@@ -81,7 +86,7 @@ func TestRemoteSourceParameters(t *testing.T) {
 							Convey("Then construction fails", func() {
 								_, err := NewSource(ctx, ioParams, params)
 								So(err, ShouldNotBeNil)
-								So(err.Error(), ShouldEqual, "host parameter must be a string")
+								So(err.Error(), ShouldStartWith, "host parameter must be a string")
 							})
 						})
 
@@ -90,11 +95,10 @@ func TestRemoteSourceParameters(t *testing.T) {
 							Convey("Then host information is set", func() {
 								src, err := NewSource(ctx, ioParams, params)
 								So(err, ShouldBeNil)
-								So(src, ShouldHaveSameTypeAs, &remoteSensorBeeSource{})
-								s := src.(*remoteSensorBeeSource)
-								So(s.topology, ShouldEqual, "foo")
-								So(s.stream, ShouldEqual, "bar")
-								So(s.originURL, ShouldEqual, "http://example.com:8090")
+								s := src.(core.Statuser).Status()
+								So(get(s, "internal_source.topology"), ShouldEqual, "foo")
+								So(get(s, "internal_source.stream"), ShouldEqual, "bar")
+								So(get(s, "internal_source.url"), ShouldEqual, "http://example.com:15601")
 							})
 						})
 					})
@@ -105,7 +109,7 @@ func TestRemoteSourceParameters(t *testing.T) {
 							Convey("Then construction fails", func() {
 								_, err := NewSource(ctx, ioParams, params)
 								So(err, ShouldNotBeNil)
-								So(err.Error(), ShouldEqual, "port parameter must be an integer")
+								So(err.Error(), ShouldStartWith, "port parameter must be an integer")
 							})
 						})
 
@@ -114,14 +118,84 @@ func TestRemoteSourceParameters(t *testing.T) {
 							Convey("Then port information is set", func() {
 								src, err := NewSource(ctx, ioParams, params)
 								So(err, ShouldBeNil)
-								So(src, ShouldHaveSameTypeAs, &remoteSensorBeeSource{})
-								s := src.(*remoteSensorBeeSource)
-								So(s.topology, ShouldEqual, "foo")
-								So(s.stream, ShouldEqual, "bar")
-								So(s.originURL, ShouldEqual, "http://localhost:1234")
+								s := src.(core.Statuser).Status()
+								So(get(s, "internal_source.topology"), ShouldEqual, "foo")
+								So(get(s, "internal_source.stream"), ShouldEqual, "bar")
+								So(get(s, "internal_source.url"), ShouldEqual, "http://localhost:1234")
 							})
 						})
 					})
+				})
+			})
+		})
+
+		Convey("When buffer_size is given", func() {
+			params := data.Map{
+				"topology": data.String("foo"),
+				"stream":   data.String("bar"),
+			}
+			Convey("When the value is correct", func() {
+				params["buffer_size"] = data.Int(10)
+				Convey("Then construction succeeds", func() {
+					src, err := NewSource(ctx, ioParams, params)
+					So(err, ShouldBeNil)
+					s := src.(core.Statuser).Status()
+					So(get(s, "internal_source.buffer_size"), ShouldEqual, 10)
+				})
+			})
+
+			Convey("When the value is invalid", func() {
+				params["buffer_size"] = data.Int(-1)
+				Convey("Then construction fails", func() {
+					_, err := NewSource(ctx, ioParams, params)
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldStartWith, "invalid buffer_size")
+				})
+			})
+
+			Convey("When the type is wrong", func() {
+				params["buffer_size"] = data.String("10")
+				Convey("Then construction fails", func() {
+					_, err := NewSource(ctx, ioParams, params)
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldStartWith, "buffer_size parameter must be an integer")
+				})
+			})
+		})
+
+		Convey("When drop_mode is given", func() {
+			params := data.Map{
+				"topology": data.String("foo"),
+				"stream":   data.String("bar"),
+			}
+
+			for _, v := range []string{"wait", "newest", "oldest"} {
+				Convey(fmt.Sprintf("When the value is %v", v), func() {
+					params["drop_mode"] = data.String(v)
+					Convey("Then construction succeeds", func() {
+						src, err := NewSource(ctx, ioParams, params)
+						So(err, ShouldBeNil)
+						s := src.(core.Statuser).Status()
+						So(get(s, "internal_source.drop_mode"), ShouldEqual, v)
+					})
+				})
+			}
+
+			Convey("When the value is invalid", func() {
+				params["drop_mode"] = data.String("invalid")
+				Convey("Then construction fails", func() {
+					_, err := NewSource(ctx, ioParams, params)
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldStartWith, "invalid drop_mode value")
+				})
+			})
+
+			Convey("When the type is wrong", func() {
+				params["drop_mode"] = data.Int(10)
+				Convey("Then construction fails", func() {
+					_, err := NewSource(ctx, ioParams, params)
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldStartWith, "drop_mode parameter must be a string")
 				})
 			})
 		})
@@ -294,6 +368,18 @@ func TestRemoteSource(t *testing.T) {
 			})
 		})
 	})
+}
+
+func newTestSource(ctx *core.Context, url string, topology string, stream string) (core.Source, error) {
+	return core.ImplementSourceStop(&wsReceiverSource{
+		originURL:      url,
+		topology:       topology,
+		stream:         stream,
+		bufferSize:     1024,
+		dropMode:       "wait",
+		dropModeClause: "WAIT",
+		stopped:        make(chan struct{}, 1),
+	}), nil
 }
 
 func createRemoteDummyStream(r *client.Requester, streamName string) error {
